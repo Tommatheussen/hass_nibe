@@ -6,6 +6,7 @@ from collections import defaultdict
 from homeassistant.components.sensor import ENTITY_ID_FORMAT
 from homeassistant.exceptions import PlatformNotReady
 from homeassistant.helpers.entity import Entity
+from nibeuplink import Uplink
 
 from .const import (
     CONF_CATEGORIES,
@@ -96,7 +97,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 class NibeSensor(NibeParameterEntity, Entity):
     """Nibe Sensor."""
 
-    def __init__(self, uplink, system_id, parameter_id, entry, data, device_info):
+    def __init__(self, uplink: Uplink, system_id: int, parameter_id, entry, data, device_info):
         """Init."""
         super(NibeSensor, self).__init__(
             uplink, system_id, parameter_id, data, ENTITY_ID_FORMAT
