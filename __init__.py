@@ -74,7 +74,7 @@ def dictify(item_schema, item_key):
         {vol.Coerce(str): item_schema},
         vol.All([vol.All(key_schema, item_schema)], list_to_dict),
         vol.All(item_schema, key_schema, value_to_dict),
-                )
+    )
 
 
 def deprecate_remove(key):
@@ -172,11 +172,20 @@ class NibeData:
 
 def _get_merged_config(config: Mapping, entry: config_entries.ConfigEntry):
     config = dict(config)
-    if CONF_SYSTEMS in entry.data:
-        for system in entry.data[CONF_SYSTEMS].keys():
-            if system not in config[CONF_SYSTEMS]:
-                config[CONF_SYSTEMS][system] = SYSTEM_SCHEMA({})
-    return config
+    for system_id, system_data in entry.data.get(CONF_SYSTEMS, {}).items():
+        system_config = config[CONF_SYSTEMS].get(system_id)
+        if system_config is None:
+            config[CONF_SYSTEMS][system_id] = system_data
+            continue
+
+        for unit_id, unit_data in system_data.get(CONF_UNITS, {}).items():
+            unit_config = system_config[CONF_UNITS].get(unit_id)
+            if unit_config is None:
+                system_config[CONF_UNITS][unit_id] = unit_data
+                continue
+            unit_config.update(unit_data)
+
+    return NIBE_SCHEMA(config)
 
 
 @asynccontextmanager
