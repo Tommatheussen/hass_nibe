@@ -4,7 +4,7 @@ import attr
 import asyncio
 import logging
 from contextlib import AsyncExitStack, asynccontextmanager
-from typing import Any, Callable, List, Dict, Set, Union, Mapping
+from typing import Any, Callable, List, Dict, Set, Mapping
 
 import voluptuous as vol
 
@@ -74,14 +74,28 @@ def dictify(item_schema, item_key):
                 )
 
 
+def deprecate_remove(key):
+    """Return validator that check for deprecation and remove field."""
+    validator = cv.deprecated(key)
+
+    def validate(value):
+        if not isinstance(value, dict):
+            raise vol.Invalid("Value not a dict")
+        result = validator(value)
+        if key in result:
+            result = dict(result)
+            del result[key]
+        return result
+    return validate
+
+
 UNIT_SCHEMA = vol.Schema(
     vol.All(
+        deprecate_remove(CONF_STATUSES),
         {
             vol.Optional(CONF_UNIT): cv.positive_int,
             vol.Optional(CONF_CATEGORIES, default=False): none_as_true,
-            vol.Optional(CONF_STATUSES, default=False): none_as_true,
         },
-        cv.deprecated(CONF_STATUSES),
     )
 )
 
@@ -96,18 +110,15 @@ THERMOSTAT_SCHEMA = vol.Schema(
 
 SYSTEM_SCHEMA = vol.Schema(
     vol.All(
-        cv.deprecated(CONF_CLIMATES),
-        cv.deprecated(CONF_WATER_HEATERS),
-        cv.deprecated(CONF_FANS),
+        deprecate_remove(CONF_CLIMATES),
+        deprecate_remove(CONF_WATER_HEATERS),
+        deprecate_remove(CONF_FANS),
         {
             vol.Optional(CONF_SYSTEM): cv.positive_int,
             vol.Optional(CONF_UNITS, default={}): dictify(UNIT_SCHEMA, CONF_UNIT),
             vol.Optional(CONF_SENSORS, default=[]): vol.All(
                 cv.ensure_list, [cv.string]
             ),
-            vol.Optional(CONF_CLIMATES): none_as_true,
-            vol.Optional(CONF_WATER_HEATERS): none_as_true,
-            vol.Optional(CONF_FANS): none_as_true,
             vol.Optional(CONF_SWITCHES, default=[]): vol.All(
                 cv.ensure_list, [cv.string]
             ),
@@ -117,7 +128,7 @@ SYSTEM_SCHEMA = vol.Schema(
             vol.Optional(CONF_THERMOSTATS, default={}): {
                 cv.positive_int: THERMOSTAT_SCHEMA
             },
-        },
+        }
     )
 )
 
