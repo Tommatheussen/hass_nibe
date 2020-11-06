@@ -59,18 +59,21 @@ def none_as_true(data):
 
 def dictify(item_schema, item_key):
     """Convert to direct lookup dict."""
+
     def list_to_dict(data: List[Dict[Any, Any]]) -> Dict[str, Dict[Any, Any]]:
         return {str(value[item_key]): value for value in data}
 
     def value_to_dict(value: Dict[Any, Any]) -> Dict[str, Dict[Any, Any]]:
         return {str(value[item_key]): value}
 
-    key_schema = vol.Schema({vol.Required(item_key): vol.Coerce(int)}, extra=vol.ALLOW_EXTRA)
+    key_schema = vol.Schema(
+        {vol.Required(item_key): vol.Coerce(int)}, extra=vol.ALLOW_EXTRA
+    )
 
     return vol.Or(
         {vol.Coerce(str): item_schema},
         vol.All([vol.All(key_schema, item_schema)], list_to_dict),
-        vol.All(item_schema, key_schema, value_to_dict)
+        vol.All(item_schema, key_schema, value_to_dict),
                 )
 
 
@@ -86,6 +89,7 @@ def deprecate_remove(key):
             result = dict(result)
             del result[key]
         return result
+
     return validate
 
 
@@ -128,7 +132,7 @@ SYSTEM_SCHEMA = vol.Schema(
             vol.Optional(CONF_THERMOSTATS, default={}): {
                 cv.positive_int: THERMOSTAT_SCHEMA
             },
-        }
+        },
     )
 )
 
@@ -269,7 +273,9 @@ async def async_setup_entry(hass, entry: config_entries.ConfigEntry):
             )
         )
         uplink = await stack.enter_async_context(Uplink(session))
-        systems = await stack.enter_async_context(async_setup_systems(hass, data.config, uplink, entry))
+        systems = await stack.enter_async_context(
+            async_setup_systems(hass, data.config, uplink, entry)
+        )
         await stack.enter_async_context(async_forward_platforms(hass, entry))
         data.stack = stack.pop_all()
 
@@ -293,7 +299,14 @@ async def async_unload_entry(hass, entry):
 class NibeSystem(object):
     """Object representing a system."""
 
-    def __init__(self, hass, uplink: Uplink, system_id: int, config: Dict[str, Any], entry_id: str):
+    def __init__(
+        self,
+        hass,
+        uplink: Uplink,
+        system_id: int,
+        config: Dict[str, Any],
+        entry_id: str,
+    ):
         """Init."""
         self.hass = hass
         self.config = config
