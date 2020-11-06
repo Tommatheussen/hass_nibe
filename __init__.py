@@ -4,7 +4,7 @@ import attr
 import asyncio
 import logging
 from contextlib import AsyncExitStack, asynccontextmanager
-from typing import List, Dict, Union, T, Mapping
+from typing import Any, List, Dict, Union, T, Mapping
 
 import voluptuous as vol
 
@@ -12,6 +12,7 @@ import homeassistant.helpers.config_validation as cv
 from homeassistant import config_entries
 from homeassistant.components import persistent_notification
 from homeassistant.const import CONF_NAME
+
 from nibeuplink import Uplink, UplinkSession
 
 from .config_flow import NibeConfigFlow  # noqa
@@ -158,6 +159,7 @@ class NibeData:
     uplink = attr.ib(default=None, type=Uplink)
     systems = attr.ib(default=[], type=List["NibeSystem"])
     stack = attr.ib(type=AsyncExitStack, factory=AsyncExitStack)
+    skip_reload = attr.ib(type=int, default=0)
 
 
 def _get_merged_config(config: Mapping, entry: config_entries.ConfigEntry):
@@ -218,9 +220,21 @@ async def async_setup(hass, config):
     return True
 
 
+async def async_update_listener(hass, entry: config_entries.ConfigEntry):
+    """Handle changes to config."""
+    data: NibeData = hass.data[DATA_NIBE]
+    if data.skip_reload == 0:
+        _LOGGER.debug("Config updated: %s", entry.as_dict()["data"])
+        await hass.config_entries.async_reload(entry.entry_id)
+    else:
+        data.skip_reload -= 1
+
+
 async def async_setup_entry(hass, entry: config_entries.ConfigEntry):
     """Set up an access point from a config entry."""
     _LOGGER.debug("Setup nibe entry")
+
+    data: NibeData = hass.data[DATA_NIBE]
 
     scope = None
     if entry.data.get(CONF_WRITEACCESS):
@@ -228,13 +242,18 @@ async def async_setup_entry(hass, entry: config_entries.ConfigEntry):
     else:
         scope = ["READSYSTEM"]
 
-    def access_data_write(data):
-        hass.config_entries.async_update_entry(
-            entry, data={**entry.data, CONF_ACCESS_DATA: data}
+    def access_data_write(access_data):
+        data.skip_reload += 1
+        changed = hass.config_entries.async_update_entry(
+            entry, data={**entry.data, CONF_ACCESS_DATA: access_data}
         )
+        if not changed:
+            data.skip_reload -= 1
 
-    data = hass.data[DATA_NIBE]
     async with data.stack as stack:
+
+        stack.callback(entry.add_update_listener(async_update_listener))
+
         session = await stack.enter_async_context(
             UplinkSession(
                 client_id=entry.data.get(CONF_CLIENT_ID),
