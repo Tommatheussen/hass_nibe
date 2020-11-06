@@ -1,5 +1,6 @@
 """Sensors for nibe."""
 
+from custom_components.nibe import NibeData
 import logging
 from collections import defaultdict
 
@@ -32,7 +33,8 @@ async def async_load(hass, uplink):
     if DATA_NIBE not in hass.data:
         raise PlatformNotReady
 
-    systems = hass.data[DATA_NIBE].systems
+    data: NibeData = hass.data[DATA_NIBE]
+    systems = data.systems
 
     sensors = defaultdict(gen_dict)
 

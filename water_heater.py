@@ -1,6 +1,7 @@
 """Water heater entity for nibe uplink."""
 
 import asyncio
+from custom_components.nibe import NibeData, NibeSystem
 import logging
 from collections import OrderedDict
 from typing import Set
@@ -67,12 +68,13 @@ async def async_setup_entry(hass, entry, async_add_entities):
     if DATA_NIBE not in hass.data:
         raise PlatformNotReady
 
-    uplink = hass.data[DATA_NIBE].uplink
-    systems = hass.data[DATA_NIBE].systems
+    data: NibeData = hass.data[DATA_NIBE]
+    uplink = data.uplink
+    systems = data.systems
 
     entities = []
 
-    async def add_active(system):
+    async def add_active(system: NibeSystem):
         hwsyses = await get_active_hotwater(uplink, system.system_id)
         for hwsys in hwsyses.values():
             entities.append(
