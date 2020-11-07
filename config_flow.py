@@ -1,8 +1,10 @@
 """Nibe uplink configuration."""
+from __future__ import annotations
 from abc import abstractmethod
+import asyncio
 import copy
 import logging
-from typing import Any, AsyncIterator, Dict
+from typing import Any, AsyncIterator, Dict, Optional, Union
 from homeassistant.core import callback  # noqa
 import voluptuous as vol
 from aiohttp.web import Request, Response, HTTPBadRequest
@@ -186,16 +188,74 @@ class FunctionFlowHandler(config_entries.OptionsFlow):
         return result
 
 
-class OptionsFlowHandler(FunctionFlowHandler):
+class AsyncFlowHandler(config_entries.OptionsFlow):
+    """Handle a option flow for a Konnected Panel."""
+
+    _task: Optional[asyncio.Task] = None
+    _comand: asyncio.Queue[Dict]
+    _runner: asyncio.Queue[Union[Dict[str, Any], Exception]]
+
+    async def async_exchange(self, command: Dict[str, Any]) -> Dict:
+        """Send a request with expected reply."""
+        self._runner.put_nowait(command)
+        return await self._comand.get()
+
+    async def async_send(self, command: Dict[str, Any]):
+        """Send a request without expected reply."""
+        return self._runner.put_nowait(command)
+
+    @abstractmethod
+    async def async_run_init(self):
+        """Run the options flow."""
+        pass
+
+    async def _run(self, fun):
+        try:
+            await fun()
+        except Exception as exeption:
+            self._runner.put_nowait(exeption)
+        else:
+            self._runner.put_nowait(Exception("Runner finished"))
+
+    async def async_step_init(self, user_input=None):
+        """Manage the options."""
+
+        if self._task is None or self._task.done():
+            self._comand = asyncio.Queue(1)
+            self._runner = asyncio.Queue(1)
+            self._task = asyncio.create_task(self._run(self.async_run_init))
+            assert user_input is None
+
+        try:
+            if user_input:
+                self._comand.put_nowait(user_input)
+            result = await self._runner.get()
+            if isinstance(result, Exception):
+                raise result
+
+            if "step_id" in result:
+                name = f"async_step_{result['step_id']}"
+                if not hasattr(self, name):
+                    setattr(self, name, self.async_step_init)
+
+            return result
+        except Exception:
+            if not self._task.done():
+                self._task.cancel()
+                self._task = None
+            raise
+
+
+class OptionsFlowHandler(AsyncFlowHandler):
     """Handle a option flow for a Konnected Panel."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry):
         """Initialize options flow."""
         self._entry = config_entry
         self._config = copy.deepcopy(dict(config_entry.data))
-        super().__init__(config_entry)
+        super().__init__()
 
-    async def run(self):
+    async def async_run_init(self):
         """Run the options flow."""
         uplink: Uplink = self.hass.data[DATA_NIBE].uplink
 
@@ -213,24 +273,26 @@ class OptionsFlowHandler(FunctionFlowHandler):
             categories_schema = cv.multi_select({str(unit["systemUnitId"]): unit["name"] for unit in units})
             categories_selected = {unit_id for unit_id, unit_config in units_configs.items() if unit_config.get(CONF_CATEGORIES, False)}
 
-            data = yield self.async_show_form(
-                step_id="system",
-                description_placeholders=system,
-                data_schema=vol.Schema(
-                    {
-                        vol.Required(
-                            CONF_CATEGORIES,
-                            default=categories_selected,
-                        ): categories_schema
-                    }
-                ),
+            data = await self.async_exchange(
+                self.async_show_form(
+                    step_id="system",
+                    description_placeholders=system,
+                    data_schema=vol.Schema(
+                        {
+                            vol.Required(
+                                CONF_CATEGORIES,
+                                default=categories_selected,
+                            ): categories_schema
+                        }
+                    )
+                )
             )
 
             for unit_id, units_config in units_configs.items():
                 units_config[CONF_CATEGORIES] = unit_id in data[CONF_CATEGORIES]
 
         self.hass.config_entries.async_update_entry(self._entry, data=self._config)
-        yield self.async_create_entry(title="", data={})
+        await self.async_send(self.async_create_entry(title="", data={}))
 
 
 class NibeAuthView(HomeAssistantView):
